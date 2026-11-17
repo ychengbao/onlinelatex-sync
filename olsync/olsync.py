@@ -60,7 +60,8 @@ def auth_file_options(legacy_name):
             default=None,
             type=click.Path(exists=False),
             metavar="PATH",
-            help=f"Path of the OnlineLaTeX login (default: {DEFAULT_AUTH_FILE} in the current directory).",
+            help=f"Login credentials (default: {DEFAULT_AUTH_FILE}). Relative paths use the directory where "
+            "the command is started, before applying --path.",
         )(f)
 
     return decorator
@@ -93,13 +94,19 @@ def configure_console():
 
 
 @click.group(invoke_without_command=True)
-@click.option("-l", "--local-only", "local", is_flag=True, help="Upload local project files to OnlineLaTeX.")
+@click.option(
+    "-l",
+    "--local-only",
+    "local",
+    is_flag=True,
+    help="Upload local files; ask before deleting remote-only files.",
+)
 @click.option(
     "-r",
     "--remote-only",
     "remote",
     is_flag=True,
-    help="Download remote project files from OnlineLaTeX.",
+    help="Download remote source files; ask before deleting local-only files (not a PDF download).",
 )
 @click.option(
     "-n",
@@ -119,7 +126,7 @@ def configure_console():
     default=".olignore",
     type=click.Path(exists=False),
     help="Path to the .olignore file (relative to the sync path): fnmatch patterns of local files that are never "
-    "uploaded, e.g. `*.log` or `out/*`.",
+    "uploaded, e.g. `*.log` or `out/*`. Filters local files, not remote downloads.",
 )
 @server_option
 @click.option("-v", "--verbose", "verbose", is_flag=True, help="Enable extended error logging.")
@@ -127,8 +134,34 @@ def configure_console():
 @click.pass_context
 def main(ctx, local, remote, project_name, auth_file, legacy_auth_file, sync_path, olignore_path, server, verbose):
     """
-    Sync an OnlineLaTeX project with the current folder (or --path). Without -l/-r, changes on both sides are synced, and
-    you're asked before anything that was changed on both sides is overwritten.
+    Sync an OnlineLaTeX project with the current folder (or --path).
+
+    Each command syncs once; it is not a background watcher. Without -l/-r,
+    sync runs in both directions and does not propagate deletions: a file
+    present on only one side is copied to the other.
+
+    If both sides changed, or differ on the first sync, choose local, remote,
+    or skip (default: skip). There is no automatic text merge. One-way modes
+    (-l/-r) ask before deleting files present only at the destination and
+    before overwriting destination edits not covered by the last sync.
+
+    Use list to find the exact remote project name. Without -n, the name
+    defaults to the local directory name. Sync does not create a project;
+    use create first if needed. Keep .onlinelatex-sync-state.json between
+    runs so changes can be compared with the last sync.
+
+    Exclude build outputs such as main.pdf and output.pdf in .olignore.
+    Do not exclude *.pdf if the paper uses PDF figures. In upload-only mode,
+    remote files excluded from the local list may be offered for deletion.
+
+    \b
+    Example (run from your paper directory):
+      onlinelatex login
+      onlinelatex list
+      onlinelatex -n "My Paper"
+
+    Sync before editing to receive remote changes, then again to upload yours.
+    For command-specific guidance, run onlinelatex COMMAND --help.
     """
     configure_console()
     if ctx.invoked_subcommand is None:
@@ -220,7 +253,20 @@ def main(ctx, local, remote, project_name, auth_file, legacy_auth_file, sync_pat
 @click.option("-v", "--verbose", "verbose", is_flag=True, help="Enable extended error logging.")
 @click.pass_context
 def login(ctx, auth_file, legacy_auth_file, server, verbose):
-    """Log in with the browser's onlatex.sid cookie (hidden input)."""
+    """Log in with the browser's onlatex.sid cookie (hidden input).
+
+    Log in to https://www.onlinelatex.com in your browser. Open developer
+    tools, then Application/Storage -> Cookies -> https://www.onlinelatex.com.
+    Copy the VALUE of onlatex.sid and paste it at the terminal prompt.
+    For --server, use the cookie from that server instead.
+
+    Credentials are saved in .olauth-onlinelatex in the current directory
+    unless --auth-file is specified. Never share or commit this file or the
+    cookie. Run login again when the session expires.
+
+    ONLINELATEX_COOKIE can supply the cookie instead of the hidden prompt.
+    Do not put the cookie directly in a command saved to shell history.
+    """
     server = resolve_login_server(ctx, server)
     cookie_path = resolve_auth_file(ctx, auth_file, legacy_auth_file, "--path")
     if os.path.isfile(cookie_path) and not click.confirm("Replace the saved OnlineLaTeX login?"):
@@ -241,7 +287,17 @@ def login(ctx, auth_file, legacy_auth_file, server, verbose):
 @server_option
 @click.pass_context
 def create_project(ctx, name, auth_file, legacy_auth_file, server):
-    """Create an empty OnlineLaTeX project."""
+    """Create an empty OnlineLaTeX project and print its URL.
+
+    Requires login. This creates the remote project only; it does not upload
+    local files or create a local directory. Choose a unique name so sync
+    can select the project unambiguously.
+
+    \b
+    Example (run from your existing paper directory):
+      onlinelatex create "My Paper"
+      onlinelatex -n "My Paper"
+    """
     client = load_client(
         resolve_auth_file(ctx, auth_file, legacy_auth_file, "--store-path"),
         server or ctx.find_root().params.get("server"),
@@ -261,7 +317,12 @@ def create_project(ctx, name, auth_file, legacy_auth_file, server):
 @click.option("-v", "--verbose", "verbose", is_flag=True, help="Enable extended error logging.")
 @click.pass_context
 def list_projects(ctx, auth_file, legacy_auth_file, server, verbose):
-    """List your OnlineLaTeX projects, most recently changed first."""
+    """List your OnlineLaTeX projects, most recently changed first.
+
+    Requires login. Archived and trashed projects are excluded. Use an exact
+    name from this list with -n when syncing or downloading a PDF. If projects
+    have duplicate names, rename them on the website before selecting one.
+    """
 
     def query_projects():
         for index, p in enumerate(sorted(overleaf_client.all_projects(), key=lambda x: x["lastUpdated"], reverse=True)):
@@ -298,14 +359,31 @@ def list_projects(ctx, auth_file, legacy_auth_file, server, verbose):
     "download_path",
     default=".",
     type=click.Path(exists=True),
-    help="Folder to save the PDF in (default: the current folder).",
+    help="Existing folder to save the PDF in (default: the current folder).",
 )
 @auth_file_options("--store-path")
 @server_option
 @click.option("-v", "--verbose", "verbose", is_flag=True, help="Enable extended error logging.")
 @click.pass_context
 def download_pdf(ctx, project_name, download_path, auth_file, legacy_auth_file, server, verbose):
-    """Compile the project on OnlineLaTeX and download the PDF."""
+    """Compile the project on OnlineLaTeX and download the PDF.
+
+    This compiles the remote sources; it does not upload local changes.
+    Sync first to include your local edits. The website's selected main
+    document and compiler are used, and its compile/account limits apply.
+
+    Saves the server's filename (typically output.pdf) in --download-path;
+    an existing file with that name is replaced. The folder must already
+    exist. Use -r on the main command to download source files instead.
+
+    \b
+    Example (run from your paper directory):
+      onlinelatex -n "My Paper"
+      mkdir -p build
+      onlinelatex download -n "My Paper" --download-path build
+
+    Exclude build/* in .olignore to keep this PDF out of future uploads.
+    """
 
     def download_project_pdf():
         nonlocal project_name
