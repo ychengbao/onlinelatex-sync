@@ -20,11 +20,11 @@ def rsps():
 
 @pytest.fixture
 def client():
-    return OverleafClient({"overleaf.sid": "s"}, "csrf-token", base_url=CE + "/")
+    return OverleafClient({"onlatex.sid": "s"}, "csrf-token", base_url=CE + "/")
 
 
 def test_default_server_is_overleaf_com():
-    assert OverleafClient({}, "csrf").base_url == "https://www.overleaf.com"
+    assert OverleafClient({}, "csrf").base_url == "https://www.onlinelatex.com"
 
 
 def test_trailing_slash_is_ignored(client):
@@ -32,6 +32,9 @@ def test_trailing_slash_is_ignored(client):
 
 
 def test_project_list_and_csrf_use_the_configured_server(rsps, client):
+    projects = [{"id": "p1", "name": "Thesis"}, {"id": "p2", "name": "Paper"}]
+    rsps.add(responses.POST, f"{CE}/api/project", json={"totalSize": 2, "projects": projects})
+    rsps.add(responses.POST, f"{CE}/api/project", json={"totalSize": 2, "projects": projects})
     rsps.add(
         responses.GET, f"{CE}/project", body=(FIXTURES / "dashboard_2026.html").read_text(), content_type="text/html"
     )

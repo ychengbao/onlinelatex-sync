@@ -24,7 +24,7 @@ except ImportError:
     import realtime
 
 
-BASE_URL = "https://www.overleaf.com"  # The default Overleaf server; self-hosted servers are passed as base_url
+BASE_URL = "https://www.onlinelatex.com"
 # Paths relative to the server's base URL
 PROJECT_PATH = "/project"  # The dashboard
 DOWNLOAD_PATH = "/project/{}/download/zip"  # Download all the files in zip format
@@ -58,7 +58,7 @@ def _request(method, url, session=None, **kwargs):
         r = requester.request(method, url, **kwargs)
         if r.status_code != 429:
             return r
-        print(f"Overleaf's rate limit was reached, retrying in {wait}s ...", file=sys.stderr)
+        print(f"OnlineLaTeX rate limit reached, retrying in {wait}s ...", file=sys.stderr)
         time.sleep(wait)
         # Rewind uploaded files, the rejected request has already read them
         for value in (kwargs.get("files") or {}).values():
@@ -68,8 +68,7 @@ def _request(method, url, session=None, **kwargs):
     r = requester.request(method, url, **kwargs)
     if r.status_code == 429:
         raise RateLimitError(
-            "Overleaf's rate limit was reached (too many requests in a short time). "
-            "Please wait a minute and try again.",
+            "OnlineLaTeX rate limit reached (too many requests in a short time). Please wait a minute and try again.",
             response=r,
         )
     return r
@@ -102,33 +101,33 @@ class OverleafClient(object):
     def _url(self, path):
         return self._base_url + path
 
-    @staticmethod
-    def _extract_projects(page_content):
-        """
-        Extract the project list from the Overleaf dashboard page.
+    def _projects(self):
+        """Read OnlineLaTeX's project API; its dashboard does not embed the project list."""
+        r = _request(
+            "POST",
+            self._url("/api/project"),
+            cookies=self._cookie,
+            headers={"X-Csrf-Token": self._csrf},
+            json={"sort": "lastUpdated"},
+            timeout=30,
+        )
+        if r.status_code in (401, 403) or urlparse(r.url).path.rstrip("/").endswith("/login"):
+            raise SessionExpiredError("OnlineLaTeX login expired. Run `onlinelatex login`.")
+        r.raise_for_status()
+        return r.json()["projects"]
 
-        Overleaf used to embed the list as a bare JSON array in a
-        <meta name="ol-projects"> tag. It now embeds
-        {"totalSize": N, "projects": [...]} in a
-        <meta name="ol-prefetchedProjectsBlob"> tag instead. Support both so
-        this keeps working if Overleaf reverts or if an older cookie/page is
-        cached somewhere.
-        """
-        soup = BeautifulSoup(page_content, "html.parser")
-        tag = soup.find("meta", {"name": "ol-prefetchedProjectsBlob"}) or soup.find("meta", {"name": "ol-projects"})
-        json_content = json.loads(tag.get("content"))
-        if isinstance(json_content, dict):
-            json_content = json_content.get("projects", [])
-        return json_content
-
-    def _dashboard(self):
-        """The project dashboard; raises SessionExpiredError if Overleaf sends us to its login page instead"""
-        r = _request("GET", self._url(PROJECT_PATH), cookies=self._cookie)
-        if any(step.is_redirect for step in r.history) and urlparse(r.url).path.rstrip("/").endswith("/login"):
-            raise SessionExpiredError(
-                "Your Overleaf session has expired or is no longer valid. Please log in again with `ols login`."
-            )
-        return r
+    def create_project(self, name):
+        """Create an empty OnlineLaTeX project and return its ID."""
+        r = _request(
+            "POST",
+            self._url("/project/new"),
+            cookies=self._cookie,
+            headers={"X-Csrf-Token": self._csrf},
+            json={"_csrf": self._csrf, "projectName": name, "template": "none"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()["project_id"]
 
     def fetch_csrf(self):
         """
@@ -148,8 +147,7 @@ class OverleafClient(object):
         Get all of a user's active projects (= not archived and not trashed)
         Returns: List of project objects
         """
-        json_content = OverleafClient._extract_projects(self._dashboard().content)
-        return list(OverleafClient.filter_projects(json_content))
+        return list(self.filter_projects(self._projects()))
 
     def get_project(self, project_name):
         """
@@ -159,11 +157,10 @@ class OverleafClient(object):
         Raises: AmbiguousProjectError if several active projects have that name
         """
 
-        json_content = OverleafClient._extract_projects(self._dashboard().content)
-        projects = list(OverleafClient.filter_projects(json_content, {"name": project_name}))
+        projects = list(self.filter_projects(self._projects(), {"name": project_name}))
         if len(projects) > 1:
             raise AmbiguousProjectError(
-                f"Multiple active projects are named {project_name!r}. Rename one of them in Overleaf, then try again."
+                f"Multiple active projects are named {project_name!r}. Rename one of them in OnlineLaTeX, then try again."
             )
         return projects[0] if projects else None
 
@@ -173,7 +170,8 @@ class OverleafClient(object):
         Params: project_id, the id of the project
         Returns: bytes string (zip file)
         """
-        r = _request("GET", self._url(DOWNLOAD_PATH.format(project_id)), stream=True, cookies=self._cookie)
+        r = _request("GET", self._url(DOWNLOAD_PATH.format(project_id)), cookies=self._cookie, timeout=120)
+        r.raise_for_status()
         return r.content
 
     def create_folder(self, project_id, parent_folder_id, folder_name):
@@ -360,13 +358,14 @@ class OverleafClient(object):
             timeout=(10, 300),
         )
 
-        if not r.ok:
-            raise reqs.HTTPError()
-
+        r.raise_for_status()
         compile_result = json.loads(r.content)
 
         if compile_result["status"] != "success":
-            raise reqs.HTTPError()
+            raise reqs.HTTPError(
+                f"OnlineLaTeX compile status: {compile_result['status']}. Check the project's compile log.",
+                response=r,
+            )
 
         pdf_file = next(v for v in compile_result["outputFiles"] if v["type"] == "pdf")
 
@@ -389,7 +388,7 @@ class OverleafClient(object):
 
         if not download_req.ok:
             raise reqs.HTTPError(
-                f"Overleaf did not serve the compiled PDF (HTTP {download_req.status_code}).",
+                f"OnlineLaTeX did not serve the compiled PDF (HTTP {download_req.status_code}).",
                 response=download_req,
             )
 

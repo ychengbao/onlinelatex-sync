@@ -1,3 +1,3 @@
-"""Overleaf Two-Way Sync Tool"""
+"""OnlineLaTeX command-line sync."""
 
-__version__ = "2.0.1"
+__version__ = "0.1.0"

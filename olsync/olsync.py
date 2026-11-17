@@ -1,4 +1,4 @@
-"""Overleaf Two-Way Sync Tool"""
+"""OnlineLaTeX command-line sync."""
 ##################################################
 # MIT License
 ##################################################
@@ -9,6 +9,7 @@
 ##################################################
 
 import click
+from requests import HTTPError
 from datetime import datetime
 import os
 import shutil
@@ -32,21 +33,18 @@ except ImportError:
     import auth
     import syncstate
 
-# Session cookie names: overleaf.com, and self-hosted servers (Community Edition, "sharelatex.sid" before version 5)
-OVERLEAF_COM_SESSION_COOKIES = ["overleaf_session2"]
-SELF_HOSTED_SESSION_COOKIES = ["overleaf.sid", "sharelatex.sid"]
+SESSION_COOKIES = ["onlatex.sid"]
 
 server_option = click.option(
     "--server",
     "server",
     default=None,
-    envvar="OLSYNC_SERVER",
+    envvar="ONLINELATEX_SERVER",
     metavar="URL",
-    help="URL of a self-hosted Overleaf server (default: the server used at login, or https://www.overleaf.com). "
-    "Can also be set with OLSYNC_SERVER.",
+    help="OnlineLaTeX server URL (default: https://www.onlinelatex.com). Can also be set with ONLINELATEX_SERVER.",
 )
 
-DEFAULT_AUTH_FILE = ".olauth"
+DEFAULT_AUTH_FILE = ".olauth-onlinelatex"
 
 
 def auth_file_options(legacy_name):
@@ -62,14 +60,14 @@ def auth_file_options(legacy_name):
             default=None,
             type=click.Path(exists=False),
             metavar="PATH",
-            help=f"Path of the persisted Overleaf login (default: {DEFAULT_AUTH_FILE} in the current directory).",
+            help=f"Path of the OnlineLaTeX login (default: {DEFAULT_AUTH_FILE} in the current directory).",
         )(f)
 
     return decorator
 
 
 def resolve_auth_file(ctx, auth_file, legacy_auth_file, legacy_name):
-    """--auth-file of the command, else of the group (`ols --auth-file X list`), else the default"""
+    """--auth-file of the command, else of the group (`onlinelatex --auth-file X list`), else the default"""
     root = ctx.find_root()
     candidates = [(auth_file, legacy_auth_file, legacy_name)]
     if root is not ctx:
@@ -95,20 +93,20 @@ def configure_console():
 
 
 @click.group(invoke_without_command=True)
-@click.option("-l", "--local-only", "local", is_flag=True, help="Sync local project files to Overleaf only.")
+@click.option("-l", "--local-only", "local", is_flag=True, help="Upload local project files to OnlineLaTeX.")
 @click.option(
     "-r",
     "--remote-only",
     "remote",
     is_flag=True,
-    help="Sync remote project files from Overleaf to local file system only.",
+    help="Download remote project files from OnlineLaTeX.",
 )
 @click.option(
     "-n",
     "--name",
     "project_name",
     default="",
-    help="Specify the Overleaf project name instead of the default name of the sync directory.",
+    help="OnlineLaTeX project name (default: the local directory name).",
 )
 @auth_file_options("--store-path")
 @click.option(
@@ -125,11 +123,11 @@ def configure_console():
 )
 @server_option
 @click.option("-v", "--verbose", "verbose", is_flag=True, help="Enable extended error logging.")
-@click.version_option(package_name="overleaf-sync")
+@click.version_option(package_name="onlinelatex-sync")
 @click.pass_context
 def main(ctx, local, remote, project_name, auth_file, legacy_auth_file, sync_path, olignore_path, server, verbose):
     """
-    Sync an Overleaf project with the current folder (or --path). Without -l/-r, changes on both sides are synced, and
+    Sync an OnlineLaTeX project with the current folder (or --path). Without -l/-r, changes on both sides are synced, and
     you're asked before anything that was changed on both sides is overwritten.
     """
     configure_console()
@@ -218,53 +216,43 @@ def main(ctx, local, remote, project_name, auth_file, legacy_auth_file, sync_pat
 
 @main.command()
 @auth_file_options("--path")
-@click.option(
-    "--cookie",
-    "use_cookie",
-    is_flag=True,
-    help="Log in without the login window, using the session cookie from a browser that is logged in to "
-    "Overleaf (`overleaf_session2` on overleaf.com, `overleaf.sid` on self-hosted servers), asked for "
-    "at a hidden prompt or read from OLSYNC_COOKIE. Useful on servers without a display and for single "
-    "sign-on accounts.",
-)
 @server_option
 @click.option("-v", "--verbose", "verbose", is_flag=True, help="Enable extended error logging.")
 @click.pass_context
-def login(ctx, auth_file, legacy_auth_file, use_cookie, server, verbose):
-    """Log in to Overleaf and store the session for the other commands."""
+def login(ctx, auth_file, legacy_auth_file, server, verbose):
+    """Log in with the browser's onlatex.sid cookie (hidden input)."""
     server = resolve_login_server(ctx, server)
     cookie_path = resolve_auth_file(ctx, auth_file, legacy_auth_file, "--path")
-    if os.path.isfile(cookie_path) and not click.confirm(
-        "Persisted Overleaf cookie already exist. Do you want to override it?"
-    ):
+    if os.path.isfile(cookie_path) and not click.confirm("Replace the saved OnlineLaTeX login?"):
         return
-    if use_cookie:
-        cookie_names = OVERLEAF_COM_SESSION_COOKIES if server == BASE_URL else SELF_HOSTED_SESSION_COOKIES
-        # Never accept the cookie as a command line argument, it would end up in the shell history
-        cookie = os.environ.get("OLSYNC_COOKIE") or click.prompt(
-            f"Value of the {cookie_names[0]} cookie", hide_input=True
-        )
-        execute_action(
-            lambda: cookie_login_handler(cookie.strip(), cookie_path, server, cookie_names),
-            "Login",
-            "Login successful. Cookie persisted as `"
-            + click.format_filename(cookie_path)
-            + "`. You may now sync your project.",
-            "Login failed: the cookie is not valid (expired, or copied incompletely).",
-            verbose,
-        )
-        return
-    olbrowserlogin = load_browser_login()
-    click.clear()
+    cookie = os.environ.get("ONLINELATEX_COOKIE") or click.prompt("Value of the onlatex.sid cookie", hide_input=True)
     execute_action(
-        lambda: login_handler(olbrowserlogin, cookie_path, server),
+        lambda: cookie_login_handler(cookie.strip(), cookie_path, server, SESSION_COOKIES),
         "Login",
-        "Login successful. Cookie persisted as `"
-        + click.format_filename(cookie_path)
-        + "`. You may now sync your project.",
-        "Login failed. Please try again.",
+        f"Login successful. Saved to {cookie_path}.",
+        "Login failed: the cookie is expired or incomplete.",
         verbose,
     )
+
+
+@main.command(name="create")
+@click.argument("name")
+@auth_file_options("--store-path")
+@server_option
+@click.pass_context
+def create_project(ctx, name, auth_file, legacy_auth_file, server):
+    """Create an empty OnlineLaTeX project."""
+    client = load_client(
+        resolve_auth_file(ctx, auth_file, legacy_auth_file, "--store-path"),
+        server or ctx.find_root().params.get("server"),
+    )
+    project_id = execute_action(
+        lambda: client.create_project(name),
+        "Creating project",
+        "Project created.",
+        "Could not create project.",
+    )
+    click.echo(f"{client.base_url}/project/{project_id}")
 
 
 @main.command(name="list")
@@ -273,7 +261,7 @@ def login(ctx, auth_file, legacy_auth_file, use_cookie, server, verbose):
 @click.option("-v", "--verbose", "verbose", is_flag=True, help="Enable extended error logging.")
 @click.pass_context
 def list_projects(ctx, auth_file, legacy_auth_file, server, verbose):
-    """List your Overleaf projects, most recently changed first."""
+    """List your OnlineLaTeX projects, most recently changed first."""
 
     def query_projects():
         for index, p in enumerate(sorted(overleaf_client.all_projects(), key=lambda x: x["lastUpdated"], reverse=True)):
@@ -303,7 +291,7 @@ def list_projects(ctx, auth_file, legacy_auth_file, server, verbose):
     "--name",
     "project_name",
     default="",
-    help="Specify the Overleaf project name instead of the default name of the sync directory.",
+    help="OnlineLaTeX project name (default: the local directory name).",
 )
 @click.option(
     "--download-path",
@@ -317,7 +305,7 @@ def list_projects(ctx, auth_file, legacy_auth_file, server, verbose):
 @click.option("-v", "--verbose", "verbose", is_flag=True, help="Enable extended error logging.")
 @click.pass_context
 def download_pdf(ctx, project_name, download_path, auth_file, legacy_auth_file, server, verbose):
-    """Compile the project on Overleaf and download the PDF."""
+    """Compile the project on OnlineLaTeX and download the PDF."""
 
     def download_project_pdf():
         nonlocal project_name
@@ -355,45 +343,14 @@ def download_pdf(ctx, project_name, download_path, auth_file, legacy_auth_file, 
     )
 
 
-def load_browser_login():
-    """
-    Import the login window module. PySide6 is an optional dependency (the "gui" extra),
-    so it is only imported when logging in.
-    """
-    try:
-        try:
-            # Import for pip installation / wheel
-            import olsync.olbrowserlogin as olbrowserlogin
-        except ImportError as e:
-            if not (e.name or "").startswith("olsync"):
-                raise
-            # Import for development (running olsync.py from inside the olsync folder)
-            import olbrowserlogin
-    except ImportError as e:
-        if (e.name or "").startswith("PySide6"):
-            raise click.ClickException(
-                'The login window needs PySide6. Install it with: pip install "overleaf-sync[gui]"\n'
-                "Alternatively, log in without the window: ols login --cookie"
-            )
-        # PySide6 is installed but can't be loaded, e.g. because another Qt installation (such as Anaconda's)
-        # conflicts with it (#59)
-        raise click.ClickException(
-            f"The login window could not be loaded: {e}\n"
-            "This usually means another Qt installation (e.g. from Anaconda) conflicts with PySide6. Installing "
-            "overleaf-sync into a fresh virtual environment based on a non-conda Python usually helps.\n"
-            "Alternatively, log in without the window: ols login --cookie"
-        )
-    return olbrowserlogin
-
-
 def resolve_login_server(ctx, server):
-    """--server on the login command, else on the group (both also read OLSYNC_SERVER), else overleaf.com"""
+    """Resolve the server from command options, ONLINELATEX_SERVER, or the default."""
     return (server or ctx.find_root().params.get("server") or BASE_URL).rstrip("/")
 
 
 def load_client(cookie_path, server=None):
     """
-    Create an OverleafClient from the persisted login. The server is --server/OLSYNC_SERVER if given, otherwise the
+    Create a client from the persisted login. The server is --server/ONLINELATEX_SERVER if given, otherwise the
     server stored at login.
     """
     try:
@@ -403,16 +360,8 @@ def load_client(cookie_path, server=None):
     return OverleafClient(login["cookies"], login["csrf"], base_url=server or login["server"])
 
 
-def login_handler(olbrowserlogin, path, server):
-    store = olbrowserlogin.login(server)
-    if store is None:
-        return False
-    auth.save_auth(path, store["cookie"], store["csrf"], server)
-    return True
-
-
 def cookie_login_handler(cookie, path, server, cookie_names):
-    # Self-hosted servers name the session cookie differently depending on the version, so try each name
+    # Verify the session before saving credentials.
     for cookie_name in cookie_names:
         cookies = {cookie_name: cookie}
         csrf = OverleafClient(cookies, base_url=server).fetch_csrf()
@@ -442,7 +391,7 @@ def upload_file(overleaf_client, project, project_infos, path):
     """
     content = read_file(path)
     if not overleaf_client.upload_file(project["id"], project_infos, path, len(content), io.BytesIO(content)):
-        raise IOError("Overleaf rejected the upload of %s" % path)
+        raise IOError("OnlineLaTeX rejected the upload of %s" % path)
     return syncstate.file_hash(content)
 
 
@@ -558,9 +507,9 @@ def two_way_sync(overleaf_client, project, project_infos, zip_file, olignore_pat
     downloads, uploads, skipped = list(plan["download"]), list(plan["upload"]), []
     for path in plan["conflict"]:
         reason = (
-            "was changed locally and on Overleaf since the last sync"
+            "was changed locally and on OnlineLaTeX since the last sync"
             if path in state
-            else "differs between local and Overleaf, and there is no sync history for it yet"
+            else "differs between local and OnlineLaTeX, and there is no sync history for it yet"
         )
         choice = click.prompt(
             "\n-> Conflict: <%s> %s.\nKeep the [l]ocal version, keep the [r]emote version or [s]kip?" % (path, reason),
@@ -755,7 +704,7 @@ def execute_action(action, progress_message, success_message, fail_message, verb
     with yaspin(text=progress_message, color="green" if sys.stdout.isatty() else None) as spinner:
         try:
             success = action()
-        except (RateLimitError, SessionExpiredError, AmbiguousProjectError) as e:
+        except (HTTPError, RateLimitError, SessionExpiredError, AmbiguousProjectError) as e:
             # A clear reason is more helpful than the generic failure message
             spinner.fail("💥 ")
             raise click.ClickException(str(e))

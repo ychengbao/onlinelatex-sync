@@ -19,7 +19,7 @@ class FakeOverleaf:
     files = {}
     uploads = []
 
-    def __init__(self, cookie=None, csrf=None, base_url="https://www.overleaf.com"):
+    def __init__(self, cookie=None, csrf=None, base_url="https://www.onlinelatex.com"):
         self.base_url = base_url
 
     def get_project(self, name):
@@ -50,7 +50,7 @@ class FakeOverleaf:
 def project(tmp_path, monkeypatch):
     project_dir = tmp_path / "Thesis"
     project_dir.mkdir()
-    olauth.save_auth(project_dir / ".olauth", {"overleaf_session2": "s"}, "c", "https://www.overleaf.com")
+    olauth.save_auth(project_dir / ".olauth-onlinelatex", {"onlatex.sid": "s"}, "c", "https://www.onlinelatex.com")
     monkeypatch.chdir(project_dir)
     monkeypatch.setattr(cli, "OverleafClient", FakeOverleaf)
     FakeOverleaf.files = {}
@@ -162,7 +162,7 @@ def test_skipped_file_stays_unsynced(project):
 def test_malformed_history_warns_and_asks_before_overwriting(project):
     FakeOverleaf.files = {"main.tex": b"v1"}
     ols()
-    path = project / ".olsync-state.json"
+    path = project / ".onlinelatex-sync-state.json"
     state = json.loads(path.read_text())
     state["files"]["main.tex"] = []
     path.write_text(json.dumps(state))

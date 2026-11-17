@@ -12,7 +12,7 @@ from olsync import auth
 from olsync import olsync as cli
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
-OVERLEAF = "https://www.overleaf.com"
+OVERLEAF = "https://www.onlinelatex.com"
 
 
 class FakeClient:
@@ -64,21 +64,21 @@ def run(*args, input=None):
 )
 def test_auth_file_option(workdir, tmp_path, args):
     path = tmp_path / "login.json"
-    auth.save_auth(path, {"overleaf_session2": "s"}, "c", OVERLEAF)
+    auth.save_auth(path, {"onlatex.sid": "s"}, "c", OVERLEAF)
     result = run(*[a.format(path) for a in args])
     assert result.exit_code == 0, result.output
-    assert FakeClient.created[-1].cookie == {"overleaf_session2": "s"}
+    assert FakeClient.created[-1].cookie == {"onlatex.sid": "s"}
     assert "deprecated" not in result.output
 
 
 @pytest.mark.parametrize("args", [["list", "--store-path", "{}"], ["--store-path", "{}", "-r"]], ids=["list", "sync"])
 def test_store_path_still_works_but_is_deprecated(workdir, tmp_path, args):
     path = tmp_path / "login.json"
-    auth.save_auth(path, {"overleaf_session2": "s"}, "c", OVERLEAF)
+    auth.save_auth(path, {"onlatex.sid": "s"}, "c", OVERLEAF)
     result = run(*[a.format(path) for a in args])
     assert result.exit_code == 0, result.output
     assert "--store-path is deprecated" in result.output
-    assert FakeClient.created[-1].cookie == {"overleaf_session2": "s"}
+    assert FakeClient.created[-1].cookie == {"onlatex.sid": "s"}
 
 
 def test_deprecated_options_are_hidden_from_help(workdir):
@@ -88,16 +88,16 @@ def test_deprecated_options_are_hidden_from_help(workdir):
 
 
 def test_old_pickle_auth_file_asks_to_log_in_again(workdir):
-    (workdir / ".olauth").write_bytes(pickle.dumps({"cookie": {"overleaf_session2": "s"}, "csrf": "c"}))
+    (workdir / ".olauth-onlinelatex").write_bytes(pickle.dumps({"cookie": {"onlatex.sid": "s"}, "csrf": "c"}))
     result = run("list")
     assert result.exit_code != 0
-    assert "older version" in result.output and "ols login" in result.output
+    assert "older version" in result.output and "onlinelatex login" in result.output
 
 
 def test_missing_auth_file_asks_to_log_in(workdir):
     result = run("list")
     assert result.exit_code != 0
-    assert "ols login" in result.output
+    assert "onlinelatex login" in result.output
 
 
 @pytest.fixture
@@ -115,19 +115,7 @@ def rsps():
 @pytest.mark.parametrize("option", ["--auth-file", "--path"])
 def test_login_writes_a_json_auth_file(rsps, tmp_path, option):
     path = tmp_path / "login.json"
-    result = run("login", "--cookie", option, str(path), input="v\n")
+    result = run("login", option, str(path), input="v\n")
     assert result.exit_code == 0, result.output
-    assert json.loads(path.read_text())["cookies"] == {"overleaf_session2": "v"}
+    assert json.loads(path.read_text())["cookies"] == {"onlatex.sid": "v"}
     assert ("--path is deprecated" in result.output) == (option == "--path")
-
-
-def test_login_window_result_is_saved_as_json(tmp_path, monkeypatch):
-    class FakeWindow:
-        @staticmethod
-        def login(base_url):
-            return {"cookie": {"overleaf_session2": "w"}, "csrf": "c"}
-
-    monkeypatch.setattr(cli, "load_browser_login", lambda: FakeWindow)
-    path = tmp_path / "login.json"
-    assert run("login", "--auth-file", str(path)).exit_code == 0
-    assert auth.load_auth(path) == {"cookies": {"overleaf_session2": "w"}, "csrf": "c", "server": OVERLEAF}
