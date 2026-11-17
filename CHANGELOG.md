@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## OnlineLaTeX Sync — 0.1.1 (2026-11-17)
+
+- Expand CLI help with Cookie retrieval, project selection, sync examples, conflict and deletion rules, and ignore-file behavior.
+- Explain that PDF downloads compile remote sources without uploading local edits and may replace an existing output file.
+- Document credential path resolution and keep task help available without login or network access.
+- Add help regression tests. Synchronization behavior is unchanged.
+
 ## OnlineLaTeX Sync — 0.1.0 (2026-11-17)
 
 - Add the `onlinelatex` CLI for onlinelatex.com, based on overleaf-sync 2.0.1.

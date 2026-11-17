@@ -21,6 +21,20 @@ pipx install git+https://github.com/ychengbao/onlinelatex-sync.git
 
 Both keep dependencies isolated. The `onlinelatex` and original `ols` commands can coexist this way; the two packages share the internal `olsync` module name, so use separate environments.
 
+## Command help
+
+Task guidance is available directly in the CLI, without a login or network access:
+
+```bash
+onlinelatex --help
+onlinelatex login --help
+onlinelatex create --help
+onlinelatex list --help
+onlinelatex download --help
+```
+
+Help covers Cookie retrieval, project selection, conflict and deletion behavior, and syncing before remote compilation.
+
 ## Login
 
 Run commands from your local paper directory:
@@ -96,7 +110,7 @@ mkdir -p build
 onlinelatex download -n "My Paper" --download-path build
 ```
 
-The website's selected main document and compiler are used. The download command saves the PDF under the name returned by the server, typically `output.pdf`; an existing file with that name is replaced.
+This command compiles remote sources; it does not upload local changes. Sync first if the PDF should include your local edits. The website's selected main document and compiler are used. The download command saves the PDF under the name returned by the server, typically `output.pdf`; an existing file with that name is replaced.
 
 ## Limitations
 
