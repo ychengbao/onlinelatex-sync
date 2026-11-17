@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## OnlineLaTeX Sync — Unreleased (0.1.0)
+
+- Add the `onlinelatex` CLI for onlinelatex.com, based on overleaf-sync 2.0.1.
+- Authenticate with `onlatex.sid` through a hidden terminal prompt.
+- List projects through `/api/project` and create blank projects.
+- Support two-way sync, one-way transfers, and remote PDF compilation/download.
+- Keep credentials and sync history separate from the original `ols` tool.
+- Include OnlineLaTeX API tests and retain the shared synchronization regression tests.
+
+## Upstream overleaf-sync history
+
+The entries below describe releases of the original project.
+
 ## [2.0.1] - 2026-10-28
 
 Bug fixes: safer downloads, uploads and sync history, and clearer errors instead of silent failures. Thanks to @lepotatoguy,

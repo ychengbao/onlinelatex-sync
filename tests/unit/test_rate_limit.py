@@ -1,9 +1,6 @@
-"""Overleaf answers with HTTP 429 when a rate limit is reached (e.g. 30 dashboard loads or 10 zip downloads per
-minute). The client waits and retries instead of failing with an unrelated error."""
+"""OnlineLaTeX HTTP 429 responses are retried and eventually reported clearly."""
 
 import io
-from pathlib import Path
-
 import pytest
 import responses
 from click.testing import CliRunner
@@ -13,8 +10,7 @@ from olsync import olclient
 from olsync import olsync as cli
 from olsync.olclient import OverleafClient, RateLimitError
 
-BASE = "https://www.overleaf.com"
-FIXTURES = Path(__file__).parent.parent / "fixtures"
+BASE = "https://www.onlinelatex.com"
 
 
 @pytest.fixture(autouse=True)
@@ -36,9 +32,9 @@ def rate_limited(rsps, method, url, times):
         rsps.add(method, url, status=429, body="Rate limit reached, please try again later")
 
 
-def test_dashboard_is_retried_after_a_rate_limit(rsps, no_waiting):
-    rate_limited(rsps, responses.GET, f"{BASE}/project", 2)
-    rsps.add(responses.GET, f"{BASE}/project", body=(FIXTURES / "dashboard_2026.html").read_text())
+def test_project_list_is_retried_after_a_rate_limit(rsps, no_waiting):
+    rate_limited(rsps, responses.POST, f"{BASE}/api/project", 2)
+    rsps.add(responses.POST, f"{BASE}/api/project", json={"projects": [{"id": "p1", "name": "Thesis"}]})
     assert OverleafClient({}, "c").get_project("Thesis")["id"] == "p1"
     assert no_waiting == [5, 10]
 
@@ -66,9 +62,9 @@ def test_persistent_rate_limit_raises_a_clear_error(rsps, no_waiting):
 
 
 def test_cli_explains_a_persistent_rate_limit(rsps, tmp_path, monkeypatch):
-    rate_limited(rsps, responses.GET, f"{BASE}/project", 10)
-    auth = tmp_path / ".olauth"
-    olauth.save_auth(auth, {"overleaf_session2": "s"}, "c", BASE)
+    rate_limited(rsps, responses.POST, f"{BASE}/api/project", 10)
+    auth = tmp_path / ".olauth-onlinelatex"
+    olauth.save_auth(auth, {"onlatex.sid": "s"}, "c", BASE)
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(cli.main, ["list", "--auth-file", str(auth)])
     assert result.exit_code != 0

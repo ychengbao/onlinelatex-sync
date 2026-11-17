@@ -54,26 +54,26 @@ def test_file_hash_is_stable_and_content_based():
 
 def test_state_round_trip(tmp_path):
     files = {"main.tex": {"local": "a", "remote": "b"}}
-    syncstate.save_state(tmp_path, "https://www.overleaf.com", "p1", files)
-    assert syncstate.load_state(tmp_path, "https://www.overleaf.com", "p1") == files
-    assert json.loads((tmp_path / ".olsync-state.json").read_text())["project_id"] == "p1"
+    syncstate.save_state(tmp_path, "https://www.onlinelatex.com", "p1", files)
+    assert syncstate.load_state(tmp_path, "https://www.onlinelatex.com", "p1") == files
+    assert json.loads((tmp_path / ".onlinelatex-sync-state.json").read_text())["project_id"] == "p1"
 
 
-@pytest.mark.parametrize("server, project_id", [("https://www.overleaf.com", "other"), ("http://ce.test", "p1")])
+@pytest.mark.parametrize("server, project_id", [("https://www.onlinelatex.com", "other"), ("http://ce.test", "p1")])
 def test_state_of_another_project_or_server_is_ignored(tmp_path, server, project_id):
-    syncstate.save_state(tmp_path, "https://www.overleaf.com", "p1", {"f": {"local": "a", "remote": "a"}})
+    syncstate.save_state(tmp_path, "https://www.onlinelatex.com", "p1", {"f": {"local": "a", "remote": "a"}})
     assert syncstate.load_state(tmp_path, server, project_id) == {}
 
 
 def test_missing_or_corrupt_state_is_empty(tmp_path):
     assert syncstate.load_state(tmp_path, "s", "p") == {}
-    (tmp_path / ".olsync-state.json").write_text("{not json")
+    (tmp_path / ".onlinelatex-sync-state.json").write_text("{not json")
     assert syncstate.load_state(tmp_path, "s", "p") == {}
 
 
 def test_save_state_leaves_no_temporary_files(tmp_path):
     syncstate.save_state(tmp_path, "s", "p", {})
-    assert [p.name for p in tmp_path.iterdir()] == [".olsync-state.json"]
+    assert [p.name for p in tmp_path.iterdir()] == [".onlinelatex-sync-state.json"]
 
 
 @pytest.mark.parametrize(

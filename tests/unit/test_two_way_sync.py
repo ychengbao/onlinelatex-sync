@@ -20,7 +20,7 @@ class FakeOverleaf:
     uploads = []
     last_updated = "2030-01-01T00:00:00.000Z"  # always "newer" than local files, like a project edited online
 
-    def __init__(self, cookie=None, csrf=None, base_url="https://www.overleaf.com"):
+    def __init__(self, cookie=None, csrf=None, base_url="https://www.onlinelatex.com"):
         self.base_url = base_url
 
     def get_project(self, name):
@@ -46,7 +46,7 @@ class FakeOverleaf:
 def project(tmp_path, monkeypatch):
     project_dir = tmp_path / "Thesis"
     project_dir.mkdir()
-    olauth.save_auth(project_dir / ".olauth", {"overleaf_session2": "s"}, "c", "https://www.overleaf.com")
+    olauth.save_auth(project_dir / ".olauth-onlinelatex", {"onlatex.sid": "s"}, "c", "https://www.onlinelatex.com")
     monkeypatch.chdir(project_dir)
     monkeypatch.setattr(cli, "OverleafClient", FakeOverleaf)
     FakeOverleaf.files = {}
@@ -149,9 +149,9 @@ def test_first_sync_asks_about_differing_files(project):
 def test_state_file_stays_local(project):
     FakeOverleaf.files = {"main.tex": b"v1"}
     sync()
-    assert (project / ".olsync-state.json").is_file()
+    assert (project / ".onlinelatex-sync-state.json").is_file()
     _, uploads = sync()
-    assert ".olsync-state.json" not in FakeOverleaf.files
+    assert ".onlinelatex-sync-state.json" not in FakeOverleaf.files
     assert uploads == []
 
 
@@ -163,7 +163,7 @@ def test_output_only_lists_sections_with_files(project):
 
 
 def corrupt_state(project):
-    path = project / ".olsync-state.json"
+    path = project / ".onlinelatex-sync-state.json"
     state = json.loads(path.read_text())
     state["files"]["main.tex"] = []
     path.write_text(json.dumps(state))

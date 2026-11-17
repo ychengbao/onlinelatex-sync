@@ -9,7 +9,7 @@ import responses
 
 from olsync.olclient import OverleafClient
 
-BASE = "https://www.overleaf.com"
+BASE = "https://www.onlinelatex.com"
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def rsps():
 
 @pytest.fixture
 def client():
-    return OverleafClient({"overleaf_session2": "s", "GCLB": "g"}, "csrf-token")
+    return OverleafClient({"onlatex.sid": "s", "GCLB": "g"}, "csrf-token")
 
 
 def project_infos(root_docs=(), root_files=(), folders=()):

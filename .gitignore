@@ -116,3 +116,5 @@ setup.py
 .olauth*
 .olignore
 .olsync-state.json
+.onlinelatex-sync-state.json
+.ruff_cache/

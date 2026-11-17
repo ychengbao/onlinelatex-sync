@@ -43,11 +43,11 @@ def polls(rsps, *bodies):
 def test_joins_the_project_and_returns_its_tree(rsps):
     handshake(rsps)
     polls(rsps, "1::", event("joinProjectResponse", {"publicId": "x", "project": PROJECT}), "")
-    infos = OverleafClient({"overleaf.sid": "s"}, "csrf", base_url=BASE).get_project_infos("p1")
+    infos = OverleafClient({"onlatex.sid": "s"}, "csrf", base_url=BASE).get_project_infos("p1")
     assert infos == PROJECT
     first = rsps.calls[0].request
     assert "projectId=p1" in first.url
-    assert first.headers["Cookie"] == "overleaf.sid=s"
+    assert first.headers["Cookie"] == "onlatex.sid=s"
 
 
 def test_framed_payloads_with_several_packets(rsps):
@@ -76,7 +76,7 @@ def test_cookies_set_by_the_handshake_are_sent_with_the_polls(rsps):
     # overleaf.com's load balancer sets a fresh GCLB affinity cookie on the handshake; the polls need it
     rsps.add(responses.GET, HANDSHAKE, body="sid123:60:60:xhr-polling", headers={"Set-Cookie": "GCLB=affinity; Path=/"})
     polls(rsps, "1::", event("joinProjectResponse", {"project": PROJECT}), "")
-    OverleafClient({"overleaf_session2": "s"}, "c", base_url=BASE).get_project_infos("p1")
+    OverleafClient({"onlatex.sid": "s"}, "c", base_url=BASE).get_project_infos("p1")
     assert "GCLB=affinity" in rsps.calls[1].request.headers["Cookie"]
 
 

@@ -50,12 +50,12 @@ def load_auth(path):
         content = Path(path).read_bytes()
     except FileNotFoundError:
         raise AuthFileError(
-            f"Persisted Overleaf login `{path}` not found. Log in with `ols login`, or check the --auth-file path."
+            f"OnlineLaTeX login `{path}` not found. Run `onlinelatex login`, or check --auth-file."
         ) from None
     if content[:1] == b"\x80":  # pickle protocol 2+, written by overleaf-sync 2.0.0a4 and earlier
         raise AuthFileError(
             f"`{path}` was created by an older version of overleaf-sync, which used a format that is no longer "
-            "supported. Please log in again with `ols login`."
+            "supported. Please log in again with `onlinelatex login`."
         )
     try:
         data = json.loads(content)
@@ -63,4 +63,4 @@ def load_auth(path):
             raise ValueError("unsupported auth file")
         return {"cookies": data["cookies"], "csrf": data["csrf"], "server": data["server"]}
     except (ValueError, KeyError, TypeError):
-        raise AuthFileError(f"`{path}` is not a valid overleaf-sync login. Please log in again with `ols login`.")
+        raise AuthFileError(f"`{path}` is not a valid login. Please run `onlinelatex login`.")

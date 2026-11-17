@@ -23,7 +23,7 @@ class FakeClient:
 
     instances = []
 
-    def __init__(self, cookie, csrf, base_url="https://www.overleaf.com"):
+    def __init__(self, cookie, csrf, base_url="https://www.onlinelatex.com"):
         self.cookie, self.csrf, self.base_url = cookie, csrf, base_url
         self.remote = dict(FakeClient.remote)
         self.uploaded, self.deleted = [], []
@@ -61,7 +61,7 @@ def workdir(tmp_path, monkeypatch):
     """A sync folder named like the project, with a valid auth file, and a fake client."""
     project_dir = tmp_path / "Thesis"
     project_dir.mkdir()
-    olauth.save_auth(project_dir / ".olauth", {"overleaf_session2": "s"}, "c", "https://www.overleaf.com")
+    olauth.save_auth(project_dir / ".olauth-onlinelatex", {"onlatex.sid": "s"}, "c", "https://www.onlinelatex.com")
     monkeypatch.chdir(project_dir)
     monkeypatch.setattr(cli, "OverleafClient", FakeClient)
     FakeClient.instances = []
@@ -77,12 +77,12 @@ def test_missing_auth_file_is_reported(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(cli.main, [])
     assert result.exit_code != 0
-    assert "not found" in result.output and "ols login" in result.output
+    assert "not found" in result.output and "onlinelatex login" in result.output
 
 
 def test_auth_file_is_passed_to_client(workdir):
     run("-r")
-    assert FakeClient.instances[0].cookie == {"overleaf_session2": "s"}
+    assert FakeClient.instances[0].cookie == {"onlatex.sid": "s"}
     assert FakeClient.instances[0].csrf == "c"
 
 

@@ -1,177 +1,114 @@
-# Overleaf-Sync
-### Easy Overleaf Two-Way Synchronization
+# OnlineLaTeX Sync
 
-![Made In Austria](https://img.shields.io/badge/Made%20in-Austria-%23ED2939.svg) ![PyPI - License](https://img.shields.io/pypi/l/overleaf-sync.svg) ![PyPI](https://img.shields.io/pypi/v/overleaf-sync.svg) ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/overleaf-sync.svg)
+A command-line client for [OnlineLaTeX](https://www.onlinelatex.com). Sync local LaTeX projects with the website, create projects, and download compiled PDFs without an editor extension.
 
-Sync your Overleaf projects with a folder on your computer, in both directions. No paid Overleaf account, Git or Dropbox needed.
+Forked from [overleaf-sync](https://github.com/moritzgloeckl/overleaf-sync) 2.0.1 by Moritz Glöckl. This is an unofficial client, not affiliated with OnlineLaTeX or Overleaf.
 
-- Edit your `.tex` files (and figures, bibliographies, …) locally with any editor, then sync them to Overleaf
-- Get the changes you or your co-authors made on Overleaf
-- Changes on both sides are detected per file; **nothing is overwritten without asking**
-- Works with free accounts on overleaf.com and with self-hosted Overleaf servers
-- Never sees or stores your password: you log in on Overleaf's own login page, and only the session cookie is kept
+## Install
 
-----
+Requires Python 3.11 or newer. Install from GitHub with [uv](https://docs.astral.sh/uv/):
 
-## Installation
-
-overleaf-sync needs Python 3.11 or newer and is available on [PyPI](https://pypi.org/project/overleaf-sync/):
-
-```
-pip install "overleaf-sync[gui]"
+```bash
+uv tool install git+https://github.com/ychengbao/onlinelatex-sync.git
+onlinelatex --version
 ```
 
-The `gui` extra installs the login window (Qt via PySide6). Without it, everything works except the login window; log in with [`ols login --cookie`](#login-without-the-login-window) instead. [pipx](https://pipx.pypa.io/) works too: `pipx install "overleaf-sync[gui]"`.
+Alternatively, use pipx:
 
-The command is called `ols`. If another program named `ols` is already on your `PATH`, use `overleaf-sync` instead; it is the same command.
-
-## Quick start
-
-1. Create the project on [Overleaf](https://www.overleaf.com/project), e.g. `thesis` (overleaf-sync can't create projects).
-2. Create a folder with the same name and go there:
-   ```
-   mkdir thesis && cd thesis
-   ```
-3. Log in once (opens Overleaf's login page in a small window):
-   ```
-   ols login
-   ```
-4. Sync:
-   ```
-   ols
-   ```
-
-Run `ols` again whenever you want to sync. If the folder name differs from the project name, pass the project name with `-n "My Project"`.
-
-## Logging in
-
-```
-ols login [--auth-file PATH] [--server URL] [--cookie]
+```bash
+pipx install git+https://github.com/ychengbao/onlinelatex-sync.git
 ```
 
-`ols login` opens Overleaf's real login page in a small window. You log in there, as in a browser (including captchas), and your password goes directly to Overleaf. overleaf-sync then stores only the session cookie and the CSRF token in `.olauth` in the current folder. The file is readable only by you and is never synced to Overleaf. Use `--auth-file` to keep it somewhere else; all commands accept the same option.
+Both keep dependencies isolated. The `onlinelatex` and original `ols` commands can coexist this way; the two packages share the internal `olsync` module name, so use separate environments.
 
-Keep `.olauth` private: anyone with this file can access your Overleaf account until the session ends. To end it, use *Clear sessions* in your Overleaf account settings (if you logged in with `--cookie`, logging out in that browser works too).
+## Login
 
-### Login without the login window
+Run commands from your local paper directory:
 
-On a server without a display, if PySide6 can't be installed (e.g. on older Linux distributions), or if the login window doesn't work for your account (e.g. single sign-on via ORCID or your institution), log in with the session cookie of your normal browser:
-
-1. Log in to Overleaf in your browser.
-2. Open the developer tools → *Application* (Firefox: *Storage*) → *Cookies* → `https://www.overleaf.com`, and copy the value of `overleaf_session2` (on a self-hosted server: `overleaf.sid`).
-3. Run `ols login --cookie` and paste the value at the hidden prompt, or provide it in the `OLSYNC_COOKIE` environment variable.
-
-This doesn't need the `gui` extra.
-
-## Syncing
-
-```
-ols [-l | -r] [-n NAME] [-p PATH] [-i OLIGNORE] [--auth-file PATH] [--server URL] [-v]
+```bash
+cd my-paper
+onlinelatex login
+onlinelatex list
 ```
 
-| Option | Meaning |
+1. Log in to `https://www.onlinelatex.com` in your browser.
+2. Open developer tools → **Application/Storage → Cookies → https://www.onlinelatex.com**.
+3. Copy the value of **`onlatex.sid`** and paste it into the terminal prompt. Input is hidden.
+
+The login is saved in `.olauth-onlinelatex` in the current directory. Treat this file and the cookie as credentials: never share or commit them. Run `onlinelatex login` again when the session expires. Use `--auth-file PATH` to keep credentials elsewhere.
+
+## Sync a project
+
+Create an empty remote project, or use the exact name of an existing project:
+
+```bash
+onlinelatex create "My Paper"
+onlinelatex -n "My Paper"
+```
+
+Without `-n`, the remote project name defaults to the local directory name. Rename duplicate project names on the website before syncing.
+
+| Command | Action |
 |---|---|
-| *(none)* | Two-way sync (see below) |
-| `-l`, `--local-only` | Only sync local files to Overleaf |
-| `-r`, `--remote-only` | Only sync files from Overleaf to the local folder |
-| `-n`, `--name` | Project name, if it differs from the folder name |
-| `-p`, `--path` | Sync folder, if it isn't the current folder |
-| `-i`, `--olignore` | Path of the [`.olignore`](#excluding-files-olignore) file (default: `.olignore` in the sync folder) |
-| `--auth-file` | Login file (default: `.olauth` in the current folder) |
-| `--server` | [Self-hosted Overleaf server](#self-hosted-overleaf-servers) |
-| `-v`, `--verbose` | Show details when something goes wrong |
+| `onlinelatex -n "My Paper"` | Two-way sync |
+| `onlinelatex -l -n "My Paper"` | Upload local changes |
+| `onlinelatex -r -n "My Paper"` | Download remote changes |
+| `onlinelatex list` | List active projects |
+| `onlinelatex download -n "My Paper"` | Compile remotely and download the PDF |
 
-**Two-way sync.** overleaf-sync remembers what every file looked like after the last sync, in `.olsync-state.json` in the sync folder (it stays local). That way it knows on which side a file changed:
+Each sync runs once; it is not a background watcher. Sync before editing to receive collaborators' changes, then sync again to upload yours.
 
-- changed locally → uploaded to Overleaf
-- changed on Overleaf → downloaded
-- changed on both sides → you're asked whether to keep the local version, keep the Overleaf version, or skip the file (skipped files come up again next time)
-- new files on either side are copied to the other side
+### Conflicts and deletions
 
-On the very first sync there's no history yet, so you're asked about every file that differs between your folder and Overleaf.
+- When a file changes on only one side, two-way sync copies the change to the other side.
+- When both sides change, or differ on the first sync, choose **local**, **remote**, or **skip**. The default is skip; there is no automatic text merge.
+- Two-way sync does not propagate deletions. A file present on only one side is copied to the other.
+- One-way modes (`-l` / `-r`) ask before deleting files from the destination. They also ask before overwriting changes not accounted for by the last sync.
 
-**One-way sync (`-l`, `-r`).** These use the same history: a file is only overwritten without asking if the other side didn't change it since the last sync. They also handle files deleted on one side: you can delete them on the other side as well, restore them, or ignore them. (Two-way sync never deletes files.)
+The baseline is stored in `.onlinelatex-sync-state.json`. Keep it in the project directory between runs.
 
-Example output of a two-way sync:
+### Exclude build outputs
 
-```
-Syncing files between [local] and [remote]
-========================================
+Create `.olignore` in the project directory, for example:
 
-[DOWNLOAD] Following file(s) downloaded from [remote]
-	chapters/intro.tex
-
-[UPLOAD] Following file(s) uploaded to [remote]
-	chapters/results.tex
-	main.tex
-
-[SYNC] Following file(s) are up to date
-	figures/plot.png
-
-✅  Synced files between [local] and [remote]
-```
-
-### Excluding files (`.olignore`)
-
-Put [`fnmatch`](https://docs.python.org/3/library/fnmatch.html) patterns, one per line, into a file called `.olignore` in the sync folder to keep local files off Overleaf, e.g. build output:
-
-```
+```text
+main.pdf
+output.pdf
 *.aux
+*.bbl
+*.blg
 *.log
-out/*
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+build/*
 ```
 
-To exclude a folder, use `folder/*` (not `folder/`). Patterns starting with `./` work too. Files and folders starting with a dot (like `.olauth`, `.olsync-state.json` or `.git`) are never uploaded.
+Use specific output PDF names, not `*.pdf`: figures may be PDFs too. Patterns use Python `fnmatch`; use `build/*`, not `build/`, for a directory. Dotfiles and hidden directories, including credentials and sync state, are excluded automatically.
 
-## Other commands
+`.olignore` filters local files. In upload-only mode, remote files outside that local file list may be offered for deletion; read the confirmation before accepting it.
 
-**`ols list`** lists your projects, most recently changed first:
+### Download a compiled PDF
 
-```
-$ ols list
-10/24/2026, 13:45:12 - thesis
-09/21/2026, 01:23:45 - Paper draft
-```
-
-**`ols download`** compiles the project on Overleaf and saves the PDF (`--download-path` to choose the folder, `-n` for the project name).
-
-## Self-hosted Overleaf servers
-
-overleaf-sync works with self-hosted Overleaf servers too. It is tested against Overleaf Community Edition; Server Pro shares its code and should work as well, but is untested. Log in with the server's URL:
-
-```
-ols login --server https://overleaf.example.com
+```bash
+mkdir -p build
+onlinelatex download -n "My Paper" --download-path build
 ```
 
-The server is stored with the login, so `ols`, `ols list` and `ols download` use it automatically. `--server` works on every command, and the `OLSYNC_SERVER` environment variable sets it too. For `ols login --cookie --server …`, copy the cookie `overleaf.sid` (`sharelatex.sid` on versions before 5).
+The website's selected main document and compiler are used. The download command saves the PDF under the name returned by the server, typically `output.pdf`; an existing file with that name is replaced.
 
-## Troubleshooting
+## Limitations
 
-- **"Your Overleaf session has expired"**: sessions end after a while, or when they're cleared in your Overleaf account settings. Run `ols login` again.
-- **"… was created by an older version of overleaf-sync"**: the login format changed in 2.0. Run `ols login` again.
-- **"Overleaf's rate limit was reached"**: Overleaf limits how many requests you can make per minute (e.g. project downloads). overleaf-sync already waits and retries; if it still fails, wait a minute.
-- **"Project could not be queried"**: check the project name (`ols list`), or pass it with `-n`.
-- **"Multiple active projects are named …"**: overleaf-sync finds projects by name and won't guess between projects with the same name. Rename one of them in Overleaf (or archive it).
-- **The login window doesn't open or crashes**: Qt can conflict with other Qt installations (e.g. Anaconda's). Install overleaf-sync in a fresh virtual environment based on a non-conda Python, or use [`ols login --cookie`](#login-without-the-login-window).
-- **`ols: no description file specified`** or other unexpected output: another program called `ols` is on your `PATH`. Use `overleaf-sync` instead.
-- **A change you just made in Overleaf's web editor isn't picked up**: give Overleaf a moment to save it, then sync again.
-- **Something else**: run the command with `-v` and [open an issue](https://github.com/moritzgloeckl/overleaf-sync/issues) with the output. overleaf-sync uses Overleaf's website like a browser does, not an official API, so changes on Overleaf's side can break it.
-
-## Migrating from 1.x
-
-- Python 3.11 or newer is required.
-- Install with `pip install "overleaf-sync[gui]"`; the login window is now an optional extra.
-- Run `ols login` once more: the login file is now stored in a safer format.
-- `--store-path` is now called `--auth-file` (the old name still works for now, and `ols login --path` too).
-- The first two-way sync asks about every file that differs between your folder and Overleaf, because there's no sync history yet. After that, only real conflicts are asked about.
+- Uses OnlineLaTeX's internal web interfaces, which may change without notice. Login uses `onlatex.sid`; project listing uses `/api/project`.
+- Compile time and other account limits remain controlled by the website. This client does not bypass them.
+- Sync is file-based, not a Git history or real-time collaborative editor.
+- The automated tests use simulated servers. Real-account upload, source download, two-way sync, and PDF compilation/download have also been exercised on OnlineLaTeX.
 
 ## Contributing
 
-Pull requests and issues are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup and the tests, and [CHANGELOG.md](CHANGELOG.md) for what changed.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and test commands. Report bugs at [GitHub Issues](https://github.com/ychengbao/onlinelatex-sync/issues), with your CLI/Python versions, OS, command, and error output. Remove credentials and private project content before posting.
 
-## Disclaimer
-THE AUTHOR OF THIS SOFTWARE AND THIS SOFTWARE IS NOT ENDORSED BY, DIRECTLY AFFILIATED WITH, MAINTAINED, AUTHORIZED, OR SPONSORED BY OVERLEAF OR WRITELATEX LIMITED. ALL PRODUCT AND COMPANY NAMES ARE THE REGISTERED TRADEMARKS OF THEIR ORIGINAL OWNERS. THE USE OF ANY TRADE NAME OR TRADEMARK IS FOR IDENTIFICATION AND REFERENCE PURPOSES ONLY AND DOES NOT IMPLY ANY ASSOCIATION WITH THE TRADEMARK HOLDER OF THEIR PRODUCT BRAND.
+## License
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-THIS SOFTWARE WAS DESIGNED TO BE USED ONLY FOR RESEARCH PURPOSES. THIS SOFTWARE COMES WITH NO WARRANTIES OF ANY KIND WHATSOEVER. USE IT AT YOUR OWN RISK! IF THESE TERMS ARE NOT ACCEPTABLE, YOU AREN'T ALLOWED TO USE THE CODE.
+[MIT](LICENSE). The upstream copyright notice is retained. Upstream release history is available in [CHANGELOG.md](CHANGELOG.md).

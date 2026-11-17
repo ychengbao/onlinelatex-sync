@@ -1,4 +1,4 @@
-"""Choosing the Overleaf server: --server / OLSYNC_SERVER, the server stored at login, or overleaf.com (#65)."""
+"""Server selection: --server, ONLINELATEX_SERVER, saved login, or www.onlinelatex.com."""
 
 from pathlib import Path
 
@@ -10,7 +10,7 @@ from olsync import auth as olauth
 from olsync import olsync as cli
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
-OVERLEAF = "https://www.overleaf.com"
+OVERLEAF = "https://www.onlinelatex.com"
 CE = "http://overleaf.example.test"
 
 
@@ -49,14 +49,14 @@ def workdir(tmp_path, monkeypatch):
     project_dir = tmp_path / "Thesis"
     project_dir.mkdir()
     monkeypatch.chdir(project_dir)
-    monkeypatch.delenv("OLSYNC_SERVER", raising=False)
+    monkeypatch.delenv("ONLINELATEX_SERVER", raising=False)
     monkeypatch.setattr(cli, "OverleafClient", RecordingClient)
     RecordingClient.created = []
     return project_dir
 
 
 def write_auth(path, server=OVERLEAF):
-    olauth.save_auth(path, {"overleaf.sid": "s"}, "c", server)
+    olauth.save_auth(path, {"onlatex.sid": "s"}, "c", server)
 
 
 def server_used():
@@ -65,14 +65,14 @@ def server_used():
 
 @pytest.mark.parametrize("args", [["list"], ["-r"], ["download"]], ids=["list", "sync", "download"])
 def test_server_stored_at_login_is_used(workdir, args):
-    write_auth(workdir / ".olauth", server=CE)
+    write_auth(workdir / ".olauth-onlinelatex", server=CE)
     result = CliRunner().invoke(cli.main, args)
     assert result.exit_code == 0, result.output
     assert server_used() == CE
 
 
-def test_overleaf_com_login_uses_overleaf_com(workdir):
-    write_auth(workdir / ".olauth")
+def test_default_login_uses_onlinelatex(workdir):
+    write_auth(workdir / ".olauth-onlinelatex")
     assert CliRunner().invoke(cli.main, ["list"]).exit_code == 0
     assert server_used() == OVERLEAF
 
@@ -83,58 +83,26 @@ def test_overleaf_com_login_uses_overleaf_com(workdir):
     ids=["group-option", "command-option", "sync", "download"],
 )
 def test_server_option_overrides_the_auth_file(workdir, args):
-    write_auth(workdir / ".olauth", server="http://other.example.test")
+    write_auth(workdir / ".olauth-onlinelatex", server="http://other.example.test")
     result = CliRunner().invoke(cli.main, args)
     assert result.exit_code == 0, result.output
     assert server_used() == CE
 
 
 def test_server_from_environment(workdir, monkeypatch):
-    write_auth(workdir / ".olauth")
-    monkeypatch.setenv("OLSYNC_SERVER", CE)
+    write_auth(workdir / ".olauth-onlinelatex")
+    monkeypatch.setenv("ONLINELATEX_SERVER", CE)
     assert CliRunner().invoke(cli.main, ["list"]).exit_code == 0
     assert server_used() == CE
 
 
 def test_trailing_slash_in_server_is_ignored(workdir):
-    write_auth(workdir / ".olauth")
+    write_auth(workdir / ".olauth-onlinelatex")
     assert CliRunner().invoke(cli.main, ["list", "--server", CE + "/"]).exit_code == 0
     assert server_used().rstrip("/") == CE
 
 
 # --- login ------------------------------------------------------------------------------------------------------
-
-
-class FakeBrowserLogin:
-    calls = []
-
-    @staticmethod
-    def login(base_url=OVERLEAF):
-        FakeBrowserLogin.calls.append(base_url)
-        return {"cookie": {"overleaf.sid": "from-window"}, "csrf": "c"}
-
-
-@pytest.mark.parametrize(
-    "args", [["--server", CE, "login"], ["login", "--server", CE]], ids=["group-option", "command-option"]
-)
-def test_login_window_opens_the_server_and_stores_it(tmp_path, monkeypatch, args):
-    monkeypatch.setattr(cli, "load_browser_login", lambda: FakeBrowserLogin)
-    FakeBrowserLogin.calls = []
-    auth = tmp_path / ".olauth"
-    result = CliRunner().invoke(cli.main, [*args, "--auth-file", str(auth)])
-    assert result.exit_code == 0, result.output
-    assert FakeBrowserLogin.calls == [CE]
-    assert olauth.load_auth(auth)["server"] == CE
-
-
-def test_login_window_defaults_to_overleaf_com(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli, "load_browser_login", lambda: FakeBrowserLogin)
-    monkeypatch.delenv("OLSYNC_SERVER", raising=False)
-    FakeBrowserLogin.calls = []
-    auth = tmp_path / ".olauth"
-    assert CliRunner().invoke(cli.main, ["login", "--auth-file", str(auth)]).exit_code == 0
-    assert FakeBrowserLogin.calls == [OVERLEAF]
-    assert olauth.load_auth(auth)["server"] == OVERLEAF
 
 
 @pytest.fixture
@@ -143,35 +111,34 @@ def rsps():
         yield mock
 
 
-def dashboard(rsps, server, accept_cookie):
-    """The dashboard answers with the page only for the given session cookie name, otherwise redirects to /login."""
-
-    def callback(request):
-        if accept_cookie + "=" in request.headers.get("Cookie", ""):
-            return 200, {"Content-Type": "text/html"}, (FIXTURES / "dashboard_2026.html").read_text()
-        return 302, {"Location": "/login"}, ""
-
-    rsps.add_callback(responses.GET, f"{server}/project", callback=callback)
+def dashboard(rsps, server):
+    rsps.add(
+        responses.GET,
+        f"{server}/project",
+        body=(FIXTURES / "dashboard_2026.html").read_text(),
+        content_type="text/html",
+    )
 
 
-@pytest.mark.parametrize("cookie_name", ["overleaf.sid", "sharelatex.sid"])
-def test_cookie_login_on_a_self_hosted_server(rsps, tmp_path, cookie_name):
-    # Community Edition uses overleaf.sid (sharelatex.sid before version 5) instead of overleaf_session2
-    dashboard(rsps, CE, accept_cookie=cookie_name)
-    auth = tmp_path / ".olauth"
-    result = CliRunner().invoke(cli.main, ["login", "--cookie", "--server", CE, "--auth-file", str(auth)], input="v\n")
+@pytest.mark.parametrize(
+    "args", [["--server", CE, "login"], ["login", "--server", CE]], ids=["group-option", "command-option"]
+)
+def test_cookie_login_uses_and_stores_selected_server(rsps, tmp_path, args):
+    dashboard(rsps, CE)
+    auth = tmp_path / ".olauth-onlinelatex"
+    result = CliRunner().invoke(cli.main, [*args, "--auth-file", str(auth)], input="v\n")
     assert result.exit_code == 0, result.output
-    assert olauth.load_auth(auth) == {"cookies": {cookie_name: "v"}, "csrf": "csrf-from-page", "server": CE}
+    assert olauth.load_auth(auth) == {"cookies": {"onlatex.sid": "v"}, "csrf": "csrf-from-page", "server": CE}
 
 
-def test_cookie_login_on_overleaf_com_stores_the_server(rsps, tmp_path, monkeypatch):
-    monkeypatch.delenv("OLSYNC_SERVER", raising=False)
-    dashboard(rsps, OVERLEAF, accept_cookie="overleaf_session2")
-    auth = tmp_path / ".olauth"
-    result = CliRunner().invoke(cli.main, ["login", "--cookie", "--auth-file", str(auth)], input="v\n")
+def test_cookie_login_defaults_to_onlinelatex(rsps, tmp_path, monkeypatch):
+    monkeypatch.delenv("ONLINELATEX_SERVER", raising=False)
+    dashboard(rsps, OVERLEAF)
+    auth = tmp_path / ".olauth-onlinelatex"
+    result = CliRunner().invoke(cli.main, ["login", "--auth-file", str(auth)], input="v\n")
     assert result.exit_code == 0, result.output
     assert olauth.load_auth(auth) == {
-        "cookies": {"overleaf_session2": "v"},
+        "cookies": {"onlatex.sid": "v"},
         "csrf": "csrf-from-page",
         "server": OVERLEAF,
     }

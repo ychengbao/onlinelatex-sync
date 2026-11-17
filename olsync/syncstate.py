@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 # Stored in the sync folder. Dotfiles are never uploaded (glob skips them), so it stays local.
-STATE_FILE = ".olsync-state.json"
+STATE_FILE = ".onlinelatex-sync-state.json"
 STATE_VERSION = 1
 
 
